@@ -1,0 +1,10 @@
+cff-version: 1.1.0
+message: "If you use this software, please cite it as below."
+title: "MayerT1/gedi-endor"
+version: "v1.0.0"
+date-released: 2025-10-02
+authors:
+  - family-names: Mayer
+    given-names: Tim
+    orcid: https://orcid.org/0000-0001-9489-9392
+doi: 10.5281/zenodo.17252723
