@@ -1,6 +1,8 @@
 # 🌲 GEDI ENDOR
 **Ecological Neural Deep fusion for Earth-Observation & Restoration**
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17252723.svg)](https://doi.org/10.5281/zenodo.17252723)
+
 ![GEDI ENDOR Logo](docs/images/gedi-endor-logo.png)
 
 GEDI ENDOR is a state-of-the-art research framework integrating **GEDI LiDAR**, **SAR**, and **optical Earth Observation data** with **deep learning models** (transformers, ensembles, and data fusion networks) to predict **forest structural and functional traits** and evaluate **forest restoration interventions**.
