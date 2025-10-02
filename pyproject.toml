@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gedi-endor"
+version = "0.1.0"
+description = "Earth-observation Neural Deep fusion for Observation & Restoration"
+authors = [{ name = "Your Name", email = "your@email.com" }]
+license = { text = "MIT" }
+dependencies = [
+    "numpy",
+    "pandas",
+    "torch",
+    "scikit-learn",
+    "rasterio",
+    "geopandas",
+    "matplotlib",
+    "tqdm"
+]
