@@ -72,9 +72,9 @@ if __name__ == "__main__":
                 "EMIT": ["reflectance"],
                 "DEM": ["elevation"]
             },
-            "timeframe": {"start": "2019-01-01","end": "2019-12-31"},
+            "timeframe": {"start": "2023-01-01","end": "2023-12-31"},
             "composites": ["median","mean"],
-            "phenology_windows": [("2019-04-01","2019-06-30"),("2019-07-01","2019-09-30")],
+            "phenology_windows": [("2023-04-01","2023-06-30"),("2023-07-01","2023-09-30")],
             "gedi_filters": {
                 "GEDI_L2A": {"quality_flag": [0,1], "sensitivity": [0.9,1.0]},
                 "GEDI_L2B": {"quality_flag": [0,1]}

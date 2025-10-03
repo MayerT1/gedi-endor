@@ -3,78 +3,97 @@
 import logging
 from pathlib import Path
 import geopandas as gpd
-import pandas as pd
-from asf_search import Search
+import asf_search as asf
+import rioxarray
+import xarray as xr
+from shapely.geometry import mapping
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+
 def fetch_s1(cfg):
     """
-    Fetch Sentinel-1 L2_RTC-S1 scenes via ASF API, clipped to AOI and timeframe.
-    
-    Args:
-        cfg: dict-like configuration containing:
-            - geography: path to AOI GeoJSON/Shapefile
-            - eo -> S1:
-                - timeframe: dict with 'start' and 'end'
-                - products: list of polarizations to filter (optional)
-            - output_dir: base directory to save raw S1 data
+    Fetch Sentinel-1 RTC scenes from ASF, clip to AOI, save as Zarr.
+
+    Authentication:
+        Uses Earthdata credentials stored in ~/.netrc (Linux/Mac)
+        or C:\\Users\\<User>\\_netrc (Windows).
     """
-    logger.info("Starting Sentinel-1 fetch...")
+    logger.info("Starting Sentinel-1 fetch → zarr...")
 
-    # AOI
-    aoi_path = cfg["geography"]
-    aoi = gpd.read_file(aoi_path)
-    aoi_bounds = aoi.total_bounds  # minx, miny, maxx, maxy
-    minx, miny, maxx, maxy = aoi_bounds
+    # Load AOI
+    aoi = gpd.read_file(cfg["geography"]).to_crs(epsg=4326)
+    aoi_wkt = aoi.geometry.unary_union.wkt
 
+    # Config
     s1_cfg = cfg["eo"]["S1"]
-    timeframe = s1_cfg.get("timeframe", {"start": "2019-01-01", "end": "2019-12-31"})
+    timeframe = s1_cfg.get("timeframe", {})
+    start = timeframe.get("start", "2019-01-01")
+    end = timeframe.get("end", "2019-12-31")
+
     output_dir = Path(cfg["output_dir"]) / "S1"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"Searching Sentinel-1 L2_RTC-S1 scenes via ASF API...")
+    # Search ASF
+    logger.info(f"Searching ASF Sentinel-1 RTC scenes from {start} to {end} ...")
+    results = asf.geo_search(
+        intersectsWith=aoi_wkt,
+        platform=asf.PLATFORM.SENTINEL1,
+        processingLevel="RTC/GRD",  # adjust if needed (e.g. "RTC")
+        start=start,
+        end=end,
+        maxResults=500,
+    )
 
-    # Create ASF Search object
-    s = Search()
-    s.platform = "Sentinel-1"
-    s.product_type = "L2_RTC-S1"
-    s.start_time = timeframe["start"]
-    s.end_time = timeframe["end"]
-    s.bbox = [miny, minx, maxy, maxx]  # [south, west, north, east]
-
-    # Fetch results
-    results = s.get_results()
     if not results:
         logger.warning("No Sentinel-1 scenes found for given AOI/timeframe.")
         return
 
-    logger.info(f"Found {len(results)} Sentinel-1 scenes. Saving to CSV...")
+    logger.info(f"Found {len(results)} candidate scenes")
 
-    # Convert results to DataFrame
-    df = pd.DataFrame(results)
+    # Auth with .netrc automatically
+    session = asf.ASFSession().auth_with_creds()
 
-    # Optionally filter by polarization if provided
-    polarizations = s1_cfg.get("products", None)
-    if polarizations:
-        df = df[df["polarizations"].apply(lambda x: any(p in x for p in polarizations))]
+    ds_list = []
 
-    # Save results
-    out_file = output_dir / f"s1_search_results_{timeframe['start']}_{timeframe['end']}.csv"
-    df.to_csv(out_file, index=False)
-    logger.info(f"Sentinel-1 search results saved to {out_file}")
+    for rec in results:
+        try:
+            # Download file
+            rec.download(path=str(output_dir), session=session)
 
-if __name__ == "__main__":
-    # Minimal test config
-    dummy_cfg = {
-        "geography": "data/test_aoi.geojson",
-        "eo": {
-            "S1": {
-                "timeframe": {"start": "2019-01-01", "end": "2019-12-31"},
-                "products": ["VV","VH"]
-            }
-        },
-        "output_dir": "data/raw/eo"
-    }
-    fetch_s1(dummy_cfg)
+            # Determine local file path
+            local_path = output_dir / rec.properties.get("fileName", "")
+            if not local_path.exists():
+                logger.warning(f"Could not find downloaded file for {rec}. Skipping.")
+                continue
+
+            # Open raster
+            xr_ds = rioxarray.open_rasterio(local_path)
+
+            # Clip to AOI
+            clipped = xr_ds.rio.clip(aoi.geometry.apply(mapping), crs="EPSG:4326")
+
+            # Add time dimension
+            acq_time = rec.properties.get("startTime")
+            clipped = clipped.expand_dims(time=[acq_time])
+
+            ds_list.append(clipped)
+
+        except Exception as e:
+            logger.warning(f"Failed to process {rec}: {e}")
+            continue
+
+    if not ds_list:
+        logger.warning("No datasets processed successfully.")
+        return
+
+    # Combine scenes along time dimension
+    combined = xr.concat(ds_list, dim="time")
+
+    # Save as Zarr
+    zarr_path = output_dir / f"s1_timeseries_{start}_{end}.zarr"
+    logger.info(f"Saving Zarr dataset to {zarr_path}")
+    combined.to_zarr(zarr_path, mode="w")
+
+    logger.info("Sentinel-1 fetch complete.")
